@@ -62,7 +62,7 @@ function fastifyOauth2 (fastify, options, next) {
 
   const name = options.name
   const credentials = options.credentials
-  const callbackUri = options.callbackUri
+  const defaultCallbackUri = options.callbackUri
   const callbackUriParams = options.callbackUriParams || {}
   const tokenRequestParams = options.tokenRequestParams || {}
   const scope = options.scope
@@ -73,10 +73,10 @@ function fastifyOauth2 (fastify, options, next) {
   const tags = options.tags || []
   const schema = options.schema || { tags }
 
-  function generateAuthorizationUri (requestObject) {
+  function generateAuthorizationUri (requestObject, { callbackUri } = {}) {
     const state = generateStateFunction(requestObject)
     const urlOptions = Object.assign({}, generateCallbackUriParams(callbackUriParams, requestObject, scope, state), {
-      redirect_uri: callbackUri,
+      redirect_uri: callbackUri ?? defaultCallbackUri,
       scope,
       state
     })
@@ -91,16 +91,16 @@ function fastifyOauth2 (fastify, options, next) {
     reply.redirect(authorizationUri)
   }
 
-  const cbk = function (o, code, callback) {
+  const cbk = function (o, code, uri, callback) {
     const body = Object.assign({}, tokenRequestParams, {
       code,
-      redirect_uri: callbackUri
+      redirect_uri: uri
     })
 
     return callbackify(o.oauth2.getToken.bind(o.oauth2, body))(callback)
   }
 
-  function getAccessTokenFromAuthorizationCodeFlowCallbacked (request, callback) {
+  function getAccessTokenFromAuthorizationCodeFlowCallbacked (request, uri, callback) {
     const code = request.query.code
     const state = request.query.state
 
@@ -109,16 +109,17 @@ function fastifyOauth2 (fastify, options, next) {
         callback(err)
         return
       }
-      cbk(fastify[name], code, callback)
+      cbk(fastify[name], code, uri, callback)
     })
   }
   const getAccessTokenFromAuthorizationCodeFlowPromisified = promisify(getAccessTokenFromAuthorizationCodeFlowCallbacked)
 
-  function getAccessTokenFromAuthorizationCodeFlow (request, callback) {
+  function getAccessTokenFromAuthorizationCodeFlow (request, { callbackUri } = {}, callback) {
+    const uri = callbackUri ?? defaultCallbackUri
     if (!callback) {
-      return getAccessTokenFromAuthorizationCodeFlowPromisified(request)
+      return getAccessTokenFromAuthorizationCodeFlowPromisified(request, uri)
     }
-    getAccessTokenFromAuthorizationCodeFlowCallbacked(request, callback)
+    getAccessTokenFromAuthorizationCodeFlowCallbacked(request, uri, callback)
   }
 
   function getNewAccessTokenUsingRefreshTokenCallbacked (refreshToken, params, callback) {
